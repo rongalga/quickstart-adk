@@ -1,5 +1,5 @@
 # To run at the terminal level
-    adk run multi_tool_agent
+    adk run weather_tool_agent_example
 # To run at the weblevel
     adk web
 # To create an environment and activate in bash
