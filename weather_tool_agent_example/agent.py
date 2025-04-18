@@ -42,8 +42,27 @@ def get_weather(city: str) -> dict:
             "status": "error",
             "error_message": f"Weather information for '{city}' is not available."
         }
-print(get_weather("New York"))
-print(get_weather("Paris"))
+# print(get_weather("New York"))
+# print(get_weather("Paris"))
+
+######################################## Define Tools for Sub-Agents  ########################################
+def say_hello(name: str = "there") -> dict:
+    """Generates a friendly greeting message.
+    Args:
+        name (str): The name of the person to greet. Defaults to "there".
+    Returns:
+        dict: A dictionary containing the greeting message.
+    """
+    print(f"--- Tool: Executing say_hello tool for name: {name} ---")
+    return f"Hello, {name}! How can I assist you today?"
+
+def say_goodbye() -> str:
+    """Generates a friendly goodbye message.
+    Returns:
+        str: A friendly goodbye message.
+    """
+    print("--- Tool: Executing say_goodbye tool ---")
+    return "Goodbye! Have a great day!"
 
 
 def get_current_time(city: str) -> dict:
@@ -90,21 +109,82 @@ if not AGENT_MODEL:
     print("Warning: MODEL_GEMINI_2_0_FLASH not found in .env, using default 'gemini-1.5-flash-latest'")
     AGENT_MODEL = "gemini-1.5-flash-latest"
 
-# Rename your agent instance to 'root_agent'
-root_agent = Agent(
-    name="weather_agent_v1", # You can keep the original name as well
-    model=AGENT_MODEL,
-    description="Provides weather and time information for a given city.",
-    instruction="You are a helpful weather assistant. Your primary goal is to provide current weather reports. "
-                "When the user asks for the weather in a specific city, "
-                "you MUST use the 'get_weather' tool to find the information. "
-                "Analyze the tool's response: if the status is 'error', inform the user politely about the error message. "
-                "If the status is 'success', present the weather 'report' clearly and concisely to the user. "
-                "Only use the tool when a city is mentioned for a weather request.",
-    tools=[get_weather],
-)
+# root_agent = Agent(
+#     name="weather_agent_v1", # You can keep the original name as well
+#     model=AGENT_MODEL,
+#     description="Provides weather and time information for a given city.",
+#     instruction="You are a helpful weather assistant. Your primary goal is to provide current weather reports. "
+#                 "When the user asks for the weather in a specific city, "
+#                 "you MUST use the 'get_weather' tool to find the information. "
+#                 "Analyze the tool's response: if the status is 'error', inform the user politely about the error message. "
+#                 "If the status is 'success', present the weather 'report' clearly and concisely to the user. "
+#                 "Only use the tool when a city is mentioned for a weather request.",
+#     tools=[get_weather],
+# )
+# print(f"Agent '{root_agent.name}' created using model '{AGENT_MODEL}' in agent.py.")
 
-print(f"Agent '{root_agent.name}' created using model '{AGENT_MODEL}' in agent.py.")
+# --- Greeting Agent ---
+greeting_agent = None
+try:
+    greeting_agent = Agent(
+        name="greeting_agent",
+        model="gemini-1.5-flash-latest",
+        instruction="You are the Greeting Agent. Your ONLY task is to provide a friendly greeting to the user. "
+                    "Use the 'say_hello' tool to generate the greeting. "
+                    "If the user provides their name, make sure to pass it to the tool. "
+                    "Do not engage in any other conversation or tasks.",
+        description="Handles simple greetings and hellos using the 'say_hello' tool.", # Crucial for delegation
+        tools=[say_hello], # Assuming say_hello is defined elsewhere
+    )
+    print(f"Greeting agent '{greeting_agent.name}' created successfully.")
+except Exception as e:
+    print(f"Error creating greeting agent: {e}")
+
+# --- Farewell Agent ---
+farewell_agent = None
+try:
+    farewell_agent = Agent(
+        name="farewell_agent",
+        model="gemini-1.5-flash-latest",
+        instruction="You are the Farewell Agent. Your ONLY task is to provide a polite goodbye to the user. "
+                    "Use the 'say_goodbye' tool to generate the goodbye message. "
+                    "Do not engage in any other conversation or tasks.",
+        description="Handles simple goodbyes using the 'say_goodbye' tool.", # Crucial for delegation
+        tools=[say_goodbye], # Assuming say_goodbye is defined elsewhere
+    )
+    print(f"Farewell agent '{farewell_agent.name}' created successfully.")
+except Exception as e:
+    print(f"Error creating farewell agent: {e}")
+
+root_agent = None
+runner_root = None # Initialize runner
+
+if greeting_agent and farewell_agent and 'get_weather' in globals():
+    root_agent = Agent(
+            name="weather_agent_v2", # Give it a new version name
+            model=AGENT_MODEL,
+            description="The main coordinator agent. Handles weather requests and delegates greetings/farewells to specialists.",
+            instruction="You are the main Weather Agent coordinating a team. Your primary responsibility is to provide weather information. "
+                        "Use the 'get_weather' tool ONLY for specific weather requests (e.g., 'weather in London'). "
+                        "You have specialized sub-agents: "
+                        "1. 'greeting_agent': Handles simple greetings like 'Hi', 'Hello'. Delegate to it for these. "
+                        "2. 'farewell_agent': Handles simple farewells like 'Bye', 'See you'. Delegate to it for these. "
+                        "Analyze the user's query. If it's a greeting, delegate to 'greeting_agent'. If it's a farewell, delegate to 'farewell_agent'. "
+                        "If it's a weather request, handle it yourself using 'get_weather'. "
+                        "For anything else, respond appropriately or state you cannot handle it.",
+            tools=[get_weather], # Root agent still needs the weather tool for its core task
+            # Key change: Link the sub-agents here!
+            sub_agents=[greeting_agent, farewell_agent]
+        )
+    print(f"Root Agent '{root_agent.name}' created using model '{AGENT_MODEL}' with sub-agents: {[sa.name for sa in root_agent.sub_agents]}")
+else:
+    print("Cannot create root agent because one or more sub-agents failed to initialize or 'get_weather' tool is missing.")
+    if not greeting_agent: print(" - Greeting Agent is missing.")
+    if not farewell_agent: print(" - Farewell Agent is missing.")
+    if 'get_weather' not in globals(): print(" - get_weather function is missing.")
+
+
+
 
 ####################################### 3. Setup Runner and Session Service  ######################################
 
